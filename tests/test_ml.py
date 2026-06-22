@@ -55,3 +55,28 @@ def test_binary_metrics_hand_calc():
 def test_curve_summary_handles_single_class():
     s = curve_summary(np.array([0, 0, 0]), np.array([0.1, 0.2, 0.3]))
     assert np.isnan(s["roc_auc"])
+
+
+def test_camouflage_makes_fixed_rules_miss_some():
+    """위장 모드에선 고정 임계값 룰의 재현율이 떨어져야 한다(룰의 취약성 입증).
+
+    이 성질이 룰 대비 ML 도입의 근거이자 정밀도/재현율 트레이드오프의 핵심 서사다.
+    """
+    from surveillance.detection.rules import RuleConfig, predict
+    from surveillance.detection.evaluate import evaluate
+    from surveillance.generator.injectors import InjectionConfig
+
+    inj = InjectionConfig(randomize_intensity=True, camouflage=True)
+    r = generate_dataset(
+        DatasetConfig(
+            seed=42, duration=40_000,
+            num_spoofing_episodes=20, num_wash_episodes=20, num_layering_episodes=20,
+            injection=inj,
+        )
+    )
+    features = build_features(r.events)
+    truth = build_truth(r.events, r.labels)
+    rep = evaluate(predict(features, RuleConfig()), truth)
+    assert rep.n_positives > 0
+    assert rep.recall < 1.0   # 위장으로 일부 조작을 놓친다
+    assert rep.precision >= 0.9  # 그래도 오탐은 거의 없다(룰은 보수적)

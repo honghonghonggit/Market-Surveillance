@@ -27,7 +27,6 @@ Episode = Generator[None, int, None]
 
 @dataclass
 class InjectionConfig:
-    # 스푸핑: 대량 주문을 여러 개 깔았다가 체결 직전 전량 취소
     # 스푸핑: *소수 레벨*에 초대량 주문을 깔았다가 체결 직전 취소(큰 qty가 변별 신호)
     spoof_num_orders: int = 4
     spoof_qty: int = 80          # 정상 max_qty(~10) 대비 비정상적으로 큼
@@ -40,6 +39,47 @@ class InjectionConfig:
     layering_qty: int = 18
     layering_hold_ticks: int = 4
 
+    # ── 난이도(위장) 모드 ──────────────────────────────────────
+    # randomize_intensity: 에피소드마다 강도를 랜덤화 → 약한 에피소드는 정상과 겹쳐 놓침(FN)
+    # camouflage: 조작 계좌가 정상 체결을 섞어 num_trade/order_to_trade 신호를 흐림
+    # → 정밀도/재현율이 실제로 맞교환되어 ROC/PR가 의미를 갖는다.
+    randomize_intensity: bool = False
+    camouflage: bool = False
+    spoof_qty_range: tuple = (25, 90)
+    wash_trades_range: tuple = (1, 7)
+    layering_levels_range: tuple = (3, 8)
+    camouflage_trades: int = 3   # camouflage만 켜고 강도 고정일 때 섞는 정상 체결 수
+    # randomize_intensity면 에피소드마다 위장량을 [0, camouflage_max]에서 뽑는다.
+    # 어떤 에피소드는 노골적(위장 0=쉬움), 어떤 에피소드는 정상 거래에 파묻혀(위장 多)
+    # 윈도우 집계 피처가 정상 영역까지 희석된다(=어려움) → 점수 분포가 퍼져 ROC가 휜다.
+    camouflage_max: int = 30
+
+
+def _camo_count(ctx: StreamContext, cfg: InjectionConfig) -> int:
+    """이 에피소드에 섞을 위장(정상) 체결 수. 랜덤 강도면 [0, camouflage_max]에서 추출."""
+    if not cfg.camouflage:
+        return 0
+    if cfg.randomize_intensity:
+        return int(ctx.rng.integers(0, cfg.camouflage_max + 1))
+    return cfg.camouflage_trades
+
+
+def _camouflage(ctx: StreamContext, account: str, ts: int, count: int) -> None:
+    """조작 계좌가 정상으로 보이는 체결을 섞는다(라벨 없음). num_trade를 늘려
+    order_to_trade_ratio 같은 신호를 흐려 탐지를 어렵게 만든다(위장)."""
+    rng = ctx.rng
+    for _ in range(count):
+        mid = ctx.engine.mid_price()
+        if rng.random() < 0.5:
+            ba = ctx.engine.best_ask()
+            side, price = Side.BUY, (ba if ba is not None else (int(round(mid)) + 1 if mid else 10_001))
+        else:
+            bb = ctx.engine.best_bid()
+            side, price = Side.SELL, (bb if bb is not None else (int(round(mid)) - 1 if mid else 9_999))
+        qty = int(rng.integers(1, 8))
+        # 자기체결 방지(스푸핑/레이어링 계좌에 거짓 워시 신호가 생기지 않도록)
+        ctx.submit(account, side, max(price, 1), qty, ts, allow_self_trade=False)
+
 
 def spoofing_episode(
     ctx: StreamContext, account: str, episode_id: str, cfg: InjectionConfig
@@ -49,6 +89,10 @@ def spoofing_episode(
     → 해당 계좌 윈도우의 취소율과 주문량이 급등(소수 레벨에 집중)."""
     ts = yield  # priming 후 첫 send로 시작 ts 수신
 
+    qty = (
+        int(ctx.rng.integers(cfg.spoof_qty_range[0], cfg.spoof_qty_range[1] + 1))
+        if cfg.randomize_intensity else cfg.spoof_qty
+    )
     mid = ctx.engine.mid_price()
     anchor = ctx.engine.best_bid()
     if anchor is None:
@@ -58,10 +102,12 @@ def spoofing_episode(
     for k in range(cfg.spoof_num_orders):
         price = max(anchor - (k % 2), 1)  # best bid·그 아래 한 틱(2레벨에 집중)
         oid = ctx.submit(
-            account, Side.BUY, price, cfg.spoof_qty, ts,
+            account, Side.BUY, price, qty, ts,
             label=Label.SPOOFING, episode_id=episode_id,
         )
         oids.append(oid)
+
+    _camouflage(ctx, account, ts, _camo_count(ctx, cfg))
 
     for _ in range(cfg.spoof_hold_ticks):
         ts = yield
@@ -78,19 +124,25 @@ def layering_episode(
     비정상적으로 많은 것이 변별 신호다. → distinct_price_levels + 취소율 급등."""
     ts = yield
 
+    num_levels = (
+        int(ctx.rng.integers(cfg.layering_levels_range[0], cfg.layering_levels_range[1] + 1))
+        if cfg.randomize_intensity else cfg.layering_num_levels
+    )
     mid = ctx.engine.mid_price()
     anchor = ctx.engine.best_bid()
     if anchor is None:
         anchor = int(round(mid)) - 1 if mid is not None else 9_999
 
     oids = []
-    for k in range(cfg.layering_num_levels):
+    for k in range(num_levels):
         price = max(anchor - k, 1)  # 연속된 여러 레벨에 한 건씩 분산
         oid = ctx.submit(
             account, Side.BUY, price, cfg.layering_qty, ts,
             label=Label.LAYERING, episode_id=episode_id,
         )
         oids.append(oid)
+
+    _camouflage(ctx, account, ts, _camo_count(ctx, cfg))
 
     for _ in range(cfg.layering_hold_ticks):
         ts = yield
@@ -110,8 +162,14 @@ def wash_trading_episode(
     가격이 매수호가를 침범하면 그 틱은 건너뛰고 다음 틱에 재시도한다."""
     ts = yield
 
+    num_trades = (
+        int(ctx.rng.integers(cfg.wash_trades_range[0], cfg.wash_trades_range[1] + 1))
+        if cfg.randomize_intensity else cfg.wash_num_trades
+    )
+    _camouflage(ctx, account, ts, _camo_count(ctx, cfg))
+
     done = 0
-    while done < cfg.wash_num_trades:
+    while done < num_trades:
         ba = ctx.engine.best_ask()
         bb = ctx.engine.best_bid()
         mid = ctx.engine.mid_price()
