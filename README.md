@@ -9,7 +9,7 @@
 > 아니라, 시세조종 탐지의 **핵심 원리와 ML 평가 방법론을 직접 구현**해 본 교육·포트폴리오 목적의
 > 프로젝트입니다.
 
-🔗 **라이브 데모:** _(배포 후 URL 입력)_ · 코드: https://github.com/honghonghonggit/market-surveillance
+🔗 **라이브 데모:** https://market-surveillance-gz8nmqme9fnfhw65qzxurs.streamlit.app/ · 코드: https://github.com/honghonghonggit/market-surveillance
 
 ---
 
