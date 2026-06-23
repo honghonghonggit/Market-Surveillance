@@ -46,6 +46,24 @@ class Label(str, Enum):
     LAYERING = "LAYERING"
 
 
+# 한 (계좌, 윈도우)에 여러 패턴이 겹칠 때의 해소 우선순위(가장 확정적인 신호 우선).
+# 자기체결(워시)이 가장 확정적 → 다중레벨(레이어링) → 대량주문(스푸핑) 순.
+# 정답 집계(build_truth)와 룰 예측(predict)이 *같은* 우선순위를 쓰도록 한 곳에 둔다.
+LABEL_PRIORITY: tuple[Label, ...] = (
+    Label.WASH_TRADING,
+    Label.LAYERING,
+    Label.SPOOFING,
+)
+
+
+def resolve_label(labels: "set[Label] | frozenset[Label]") -> Label:
+    """겹치는 라벨 집합에서 우선순위가 가장 높은 라벨을 고른다."""
+    for lbl in LABEL_PRIORITY:
+        if lbl in labels:
+            return lbl
+    return next(iter(labels))  # 우선순위 밖(이론상 도달하지 않음)
+
+
 @dataclass(frozen=True, slots=True)
 class OrderEvent:
     """주문 생애주기 이벤트 1건. (라벨 정보는 의도적으로 포함하지 않는다.)

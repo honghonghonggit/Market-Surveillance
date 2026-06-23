@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from ..generator.events import Label
+from ..generator.events import LABEL_PRIORITY, Label
 
 
 @dataclass
@@ -50,10 +50,15 @@ def predict(features: pd.DataFrame, config: RuleConfig | None = None) -> pd.Data
         & (out["num_new"] >= cfg.min_new_for_spoof)
     )
 
+    masks = {
+        Label.WASH_TRADING: is_wash,
+        Label.LAYERING: is_layering,
+        Label.SPOOFING: is_spoof,
+    }
+    # 우선순위 낮은 것부터 칠하고, 높은 것이 덮어쓰게 한다(build_truth와 동일한 우선순위).
     predicted = pd.Series(Label.NORMAL.value, index=out.index, dtype=object)
-    predicted[is_spoof] = Label.SPOOFING.value
-    predicted[is_layering] = Label.LAYERING.value  # 레이어링이 스푸핑보다 우선
-    predicted[is_wash] = Label.WASH_TRADING.value  # 워시가 최우선
+    for lbl in reversed(LABEL_PRIORITY):
+        predicted[masks[lbl]] = lbl.value
 
     out["predicted_label"] = predicted
     out["is_alert"] = predicted != Label.NORMAL.value

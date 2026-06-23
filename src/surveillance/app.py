@@ -17,13 +17,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")
-# 차트 한글 깨짐 방지. 로컬(Windows)=맑은 고딕, 배포(Linux/Streamlit Cloud)=나눔고딕
-# (packages.txt의 fonts-nanum). matplotlib는 설치된 첫 폰트를 쓰므로 양쪽을 모두 둔다.
-matplotlib.rcParams["font.family"] = ["Malgun Gothic", "NanumGothic", "DejaVu Sans"]
-matplotlib.rcParams["axes.unicode_minus"] = False
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
+
+from surveillance.viz import setup_korean_font  # noqa: E402
+
+setup_korean_font()  # 차트 한글 깨짐 방지(로컬=맑은고딕, 배포=나눔고딕)
 
 from surveillance.detection.curves import binary_metrics, curve_summary, save_curves  # noqa: E402
 from surveillance.detection.evaluate import build_truth, evaluate  # noqa: E402

@@ -19,9 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")
-matplotlib.rcParams["font.family"] = ["Malgun Gothic", "DejaVu Sans"]
-matplotlib.rcParams["axes.unicode_minus"] = False
 import matplotlib.pyplot as plt  # noqa: E402
+
+from surveillance.viz import setup_korean_font  # noqa: E402
+
+setup_korean_font()  # 차트 한글 깨짐 방지(로컬=맑은고딕, 배포=나눔고딕)
 
 from surveillance.detection.analysis import (  # noqa: E402
     build_episode_table,

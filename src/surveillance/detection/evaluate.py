@@ -18,7 +18,13 @@ from typing import Dict, Iterable, List, Tuple
 import pandas as pd
 
 from ..features.windows import DEFAULT_WINDOW_MS, window_index
-from ..generator.events import EventType, Label, OrderEvent, GroundTruthLabel
+from ..generator.events import (
+    EventType,
+    GroundTruthLabel,
+    Label,
+    OrderEvent,
+    resolve_label,
+)
 
 Key = Tuple[str, int]
 
@@ -51,15 +57,8 @@ def build_truth(
 
     records = []
     for (account_id, w), lbls in truth.items():
-        # 한 윈도우에 여러 패턴이 겹치면 우선순위로 정함(자기체결이 가장 확정적)
-        if Label.WASH_TRADING in lbls:
-            true_label = Label.WASH_TRADING.value
-        elif Label.LAYERING in lbls:
-            true_label = Label.LAYERING.value
-        elif Label.SPOOFING in lbls:
-            true_label = Label.SPOOFING.value
-        else:
-            true_label = next(iter(lbls)).value
+        # 한 윈도우에 여러 패턴이 겹치면 공유 우선순위로 정함(자기체결이 가장 확정적)
+        true_label = resolve_label(lbls).value
         records.append({"account_id": account_id, "window": w, "true_label": true_label})
 
     return pd.DataFrame.from_records(
