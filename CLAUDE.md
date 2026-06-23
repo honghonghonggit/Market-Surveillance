@@ -6,26 +6,25 @@
 
 ## 기술 스택
 - 언어: Python 3.12
-- 스트리밍: Kafka (Docker로 로컬 구동), kafka-python 또는 confluent-kafka
 - 데이터 처리: pandas, numpy
-- 탐지 모델: scikit-learn (통계 기반 룰 + ML 분류기), 필요시 XGBoost
+- 탐지 모델: scikit-learn (통계 기반 룰 + ML 분류기)
 - 시각화/대시보드: Streamlit + Plotly
 - 테스트: pytest
-- 배포: 추후 결정 (Kafka 포함이라 단순 Streamlit Cloud보다 신경 쓸 게 많음 — Phase 단위로 판단)
+- 배포: Streamlit Community Cloud
+- (Kafka는 기획 초안에 있었으나 의도적으로 제외 — 인메모리 스트림으로 탐지 로직 완전 검증 가능, 스코프 판단. 근거: README §4(9))
 
 ## 빌드 / 테스트
 - `pip install -r requirements.txt`
-- `docker-compose up`로 Kafka 로컬 구동
 - `pytest`
-- `streamlit run src/surveillance/app.py`
+- `python -m streamlit run src/surveillance/app.py`
+- `python scripts/run_phase1.py` / `run_phase2.py` / `run_phase3.py`
 
-## 개발 순서
-1. 합성 주문 데이터 생성기 + 패턴 주입(ground truth 라벨 포함)부터 TDD로 구현
-2. Kafka 스트리밍 파이프라인(프로듀서/컨슈머) 구성
-3. 피처 엔지니어링(주문취소율, 가격충격, 레이어링 지표 등)
-4. 탐지 모델(룰 기반 → ML) + 정밀도·재현율·ROC 평가
-5. Streamlit 대시보드
-6. 배포 판단
+## 개발 순서 (실제 진행)
+1. 합성 주문 데이터 생성기 + 패턴 주입(ground truth 라벨 포함) — TDD
+2. 피처 엔지니어링(주문취소율, 가격충격, 레이어링 지표 등)
+3. 탐지 모델(룰 기반 → ML) + 정밀도·재현율·ROC 평가
+4. Streamlit 대시보드
+5. Phase 3: 패턴×강도 분해, 탐지 지연, 오탐 분석
 
 ## 핵심 원칙
 - 범위는 Phase1(MVP) → Phase2(차별화) → Phase3(스트레치) 순서로 단계적으로 확장한다. Phase1이 끝나기 전 다음 단계에 손대지 않는다.
@@ -35,17 +34,18 @@
 - 커밋 메시지에 "Co-Authored-By: Claude"나 "Generated with Claude Code" 같은 attribution을 절대 넣지 않는다. (전역 설정 includeCoAuthoredBy:false와 함께 이중 안전장치)
 - 큰 설계 변경 전에는 plan mode로 먼저 합의받는다.
 
-## 폴더 구조 (초안)
+## 폴더 구조
 ```
 market-surveillance/
-├── docker-compose.yml          # Kafka + Zookeeper
 ├── src/surveillance/
 │   ├── generator/              # 합성 데이터 생성 + 패턴 주입
-│   ├── streaming/              # Kafka 프로듀서/컨슈머
 │   ├── features/               # 피처 엔지니어링
-│   ├── detection/              # 탐지 모델 + 평가
+│   ├── detection/              # 탐지 모델 + 평가 + Phase 3 분석
+│   ├── viz.py                  # matplotlib 한글 폰트 공통 설정
 │   └── app.py                  # Streamlit 대시보드
+├── scripts/                    # run_phase1/2/3.py
 ├── tests/
+├── docs/                       # PROJECT_BRIEF.md, architecture.png
 ├── requirements.txt
 └── README.md
 ```
